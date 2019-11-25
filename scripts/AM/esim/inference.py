@@ -40,6 +40,7 @@ flags.DEFINE_string("vocab_file", None, "The vocabulary file.")
 flags.DEFINE_string("output_dir", None,
 		"The output directory where the model checkpoints will be written.")
 flags.DEFINE_bool("return_score", False, "Whether only return the confidence score.")
+flags.DEFINE_integer("number_of_systems", 21, "Total number of submissions for evaluation")
 
 # Other parameters
 flags.DEFINE_string("embedding_file", None, "The pre-trained embedding file path.")
@@ -557,35 +558,37 @@ def predict_metrics(sess, cost_op, probability_op, iterator):
 
     tf.logging.info("seen samples %s", n_done)
 
-    sum_map = 0
-    sum_mrr = 0
-    sum_p1 = 0
-    sum_r1 = 0
-    sum_r2 = 0
-    sum_r5 = 0
-    total_num = 0
-
-    for i, (s, l) in enumerate(zip(scores, labels)):
-        if i % 22 == 0:
-            data = []
-        data.append((float(s), int(l)))
-
-        if i % 22 == 21:
-            total_num += 1
-            ap, rr, precision1, recall1, recall2, recall5 = evaluation_one_session(
-                data)
-            sum_map += ap
-            sum_mrr += rr
-            sum_p1 += precision1
-            sum_r1 += recall1
-            sum_r2 += recall2
-            sum_r5 += recall5
-
-    metrics = [1. * sum_map / total_num, 1. * sum_mrr / total_num, 1. * sum_p1 / total_num,
-               1. * sum_r1 / total_num, 1. * sum_r2 / total_num, 1. * sum_r5 / total_num]
-
-    return metrics, scores
-
+    if not FLAGS.return_score:
+        sum_map = 0
+        sum_mrr = 0
+        sum_p1 = 0
+        sum_r1 = 0
+        sum_r2 = 0
+        sum_r5 = 0
+        total_num = 0
+    
+        for i, (s, l) in enumerate(zip(scores, labels)):
+            if i %  FLAGS.number_of_systems== 0:
+                data = []
+            data.append((float(s), int(l)))
+    
+            if i % FLAGS.number_of_systems == FLAGS.number_of_systems - 1:
+                total_num += 1
+                ap, rr, precision1, recall1, recall2, recall5 = evaluation_one_session(
+                    data)
+                sum_map += ap
+                sum_mrr += rr
+                sum_p1 += precision1
+                sum_r1 += recall1
+                sum_r2 += recall2
+                sum_r5 += recall5
+    
+        metrics = [1. * sum_map / total_num, 1. * sum_mrr / total_num, 1. * sum_p1 / total_num,
+                   1. * sum_r1 / total_num, 1. * sum_r2 / total_num, 1. * sum_r5 / total_num]
+    
+        return metrics, scores
+    else:
+        return scores	
 
 def load_vocab(vocab_file):
     """Loads a vocabulary file into a dictionary."""
@@ -640,22 +643,36 @@ def main(_):
         tf.logging.info(
             "restore model at {}".format(FLAGS.model_file))
         saver.restore(sess, os.path.join(FLAGS.output_dir, FLAGS.model_file))
-
-        test_metrics, test_scores = predict_metrics(
-            sess, cost_op, probability_op, test)
-        tf.logging.info(
-            "test set: MAP %s MRR %s Precision@1 %s Recall@1 %s Recall@2 %s Recall@5 %s", *test_metrics)
-        if FLAGS.return_score:
+        
+        if not FLAGS.return_score:
+            test_metrics, test_scores = predict_metrics(
+                 sess, cost_op, probability_op, test)
+            tf.logging.info(
+                 "test set: MAP %s MRR %s Precision@1 %s Recall@1 %s Recall@2 %s Recall@5 %s", *test_metrics)
+        else:
+            test_scores = predict_metrics(sess, cost_op, probability_op, test)
+            system_level_scores = {}
+            for i in range(FLAGS.number_of_systems):
+                system_level_scores[i] = []	
             tf.logging.info("Writing confidence score to file")
-            with codecs.open("am_ranking_score.txt", mode='w', encoding='utf-8') as wf:
+            with codecs.open("context_am_ranking_score.txt", mode='w', encoding='utf-8') as wf:
                 wf.truncate()
             for i, score in enumerate(test_scores):
+                system_level_scores[i % FLAGS.number_of_systems].append(score)
                 with codecs.open("context_am_ranking_score.txt", mode='a', encoding='utf-8') as wf:
                     wf.write(str(score) + '\n')
-                if i % 22 == 21:
+                if i % FLAGS.number_of_systems == FLAGS.number_of_systems - 1:
                     with codecs.open("context_am_ranking_score.txt", mode='a', encoding='utf-8') as wf:
                         wf.write('\n')
+            
+            with codecs.open("context_am_ranking_score_system_level.txt", mode='w', encoding='utf-8') as wf:
+                wf.truncate()
+            for k, v in system_level_scores.items():
+                avg_score = sum(v) / len(v)
+                with codecs.open("context_am_ranking_score_system_level.txt", mode='a', encoding='utf-8') as wf:
+                    wf.write(str(avg_score) + '\n')
             tf.logging.info("Done writing confidence score to file")
+                    
            			
             
 

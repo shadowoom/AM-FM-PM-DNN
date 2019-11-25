@@ -105,3 +105,8 @@ venv.bak/
 
 # data folder
 data/
+
+# models
+scripts/AM/*/models
+scripts/AM/*/*.txt
+

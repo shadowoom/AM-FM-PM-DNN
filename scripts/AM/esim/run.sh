@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DATA_DIR=../../data/twitter_data_concat
+DATA_DIR=../../../data/twitter_data_concat
 
 CUDA_VISIBLE_DEVICES=2 python -u main.py \
 --train_file=$DATA_DIR/train.txt \
